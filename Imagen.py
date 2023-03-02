@@ -12,7 +12,7 @@ import torchvision.transforms as T
 from einops import rearrange, repeat
 from einops_exts import check_shape
 
-import Unet
+from Unet import Unet
 from utils import cast_tuple, default, resize_image_to, normalize_neg_one_to_one, \
     unnormalize_zero_to_one, identity, exists, module_device, right_pad_dims_to, maybe, eval_decorator, null_context
 from t5 import t5_encode_text, get_encoded_dim
@@ -20,7 +20,7 @@ from diffusion_model import GaussianDiffusion
 
 class Imagen(nn.Module):
     def __init__(self, unets, *, text_encoder_name, image_sizes, text_embed_dim=None, channels=3, timesteps=1000,
-                 cond_drop_prob=0.1, loss_type='12', lowres_sample_noise_level=0.2, auto_normalize_img=True,
+                 cond_drop_prob=0.1, loss_type='l2', lowres_sample_noise_level=0.2, auto_normalize_img=True,
                  dynamic_thresholding_percentile=0.9, only_train_unet_number=None 
                 ):
         
@@ -224,7 +224,7 @@ class Imagen(nn.Module):
         return noise_scheduler.q_posterior(x_start=x_start, x_t=x, t=t)
     
     @torch.no_grad()
-    def _p_sample(self, unet, x, t, *, text_embeds=None, text_mask=None, 
+    def _p_sample(self, unet, x, t, *, noise_scheduler, text_embeds=None, text_mask=None, 
                   lowres_cond_img=None, lowres_noise_times=None, cond_scale=1.):
         
         b, *_, device = *x.shape, x.device
@@ -236,7 +236,7 @@ class Imagen(nn.Module):
                                                                   lowres_cond_img=lowres_cond_img,
                                                                   lowres_noise_times=lowres_noise_times)
         
-        noise = torchl.randn_like(x)
+        noise = torch.randn_like(x)
         
         is_last_sampling_timestep = (t == 0)
         nonzero_mask = (1 - is_last_sampling_timestep.float()).reshape(b, *((1,) * (len(x.shape) - 1)))
@@ -259,7 +259,7 @@ class Imagen(nn.Module):
         
         img = torch.randn(shape, device=device)
         
-        for times in tqdm(timesteps, desc='sampling loop time step', total=len(timessteps)):
+        for times in tqdm(timesteps, desc='sampling loop time step', total=len(timesteps)):
             img = self.p_sample(unet, img, times, text_embeds=text_embeds, text_mask=text_mask,
                                 cond_scale=cond_scale, lowres_cond_img=lowres_cond_img,
                                 lowres_noise_times=lowres_noise_times, noise_scheduler=noise_scheduler

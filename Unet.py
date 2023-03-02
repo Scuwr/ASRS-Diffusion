@@ -79,6 +79,28 @@ class Unet(nn.Module):
             nn.Linear(time_cond_dim, cond_dim * NUM_TIME_TOKENS),
             Rearrange('b (r d) -> b r d', r=NUM_TIME_TOKENS)
         )
+
+        # LOW RES NOISE CONDITIONING AUGMENTATION
+        #   See: https://www.assemblyai.com/blog/how-imagen-actually-works/#robust-cascaded-diffusion-models
+
+        self.lowres_cond = lowres_cond
+
+        # Same as above but for low-res images
+        if lowres_cond:
+            self.to_lowres_time_hiddens = nn.Sequential(
+                SinusoidalPosEmb(dim),
+                nn.Linear(dim, time_cond_dim),
+                nn.SiLU()
+            )
+
+            self.to_lowres_time_cond = nn.Sequential(
+                nn.Linear(time_cond_dim, time_cond_dim)
+            )
+
+            self.to_lowres_time_tokens = nn.Sequential(
+                nn.Linear(time_cond_dim, cond_dim * NUM_TIME_TOKENS),
+                Rearrange('b (r d) -> b r d', r=NUM_TIME_TOKENS)
+            )
         
         # TEXT CONDITIONING
 
@@ -270,6 +292,24 @@ class Unet(nn.Module):
         self.final_conv = nn.Conv2d(final_conv_dim_in, self.channels_out, 3,
                                     padding=3 // 2)
         
+    def _cast_model_parameters(self, *, lowres_cond, text_embed_dim,
+                               channels, channels_out,
+                              ):
+        if lowres_cond == self.lowres_cond and \
+                channels == self.channels and \
+                text_embed_dim == self.text_embed_dim and \
+                channels_out == self.channels_out:
+            return self
+
+        updated_kwargs = dict(
+            lowres_cond=lowres_cond,
+            text_embed_dim=text_embed_dim,
+            channels=channels,
+            channels_out=channels_out,
+        )
+
+        return self.__class__(**{**self._locals, **updated_kwargs})
+
     def forward(
             self,
             x,

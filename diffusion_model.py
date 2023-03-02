@@ -1,7 +1,8 @@
+import torch
 import torch.nn.functional as F
 from torch import nn
 
-from utils import extract
+from utils import extract, exists
 
 class GaussianDiffusion(nn.Module):
     def __init__(self, *, timesteps: int):
@@ -55,7 +56,27 @@ class GaussianDiffusion(nn.Module):
         #   https://github.com/oconnoob/minimal_imagen/blob/minimal/images/posterior_mean_coeffs.png
         register_buffer('posterior_mean_coef1', betas * torch.sqrt(alphas_cumprod_prev) / (1. - alphas_cumprod))
         register_buffer('posterior_mean_coef2', (1. - alphas_cumprod_prev) * torch.sqrt(alphas) / (1. - alphas_cumprod))
-        
+
+    def _get_times(self, batch_size: int, noise_level: float, *, device: torch.device) -> torch.tensor:
+        return torch.full((batch_size,), int(self.num_timesteps * noise_level), device=device, dtype=torch.long)
+
+    def _sample_random_times(self, batch_size: int, *, device: torch.device) -> torch.tensor:
+        """
+        Randomly sample `batch_size` timestep values uniformly from [0, 1, ..., `self.num_timesteps`]
+        :param batch_size: Number of images in the batch.
+        :param device: Device on which to place the return tensor.
+        :return: Tensor of integers (`dtype=torch.long`) of shape `(batch_size,)`
+        """
+        return torch.randint(0, self.num_timesteps, (batch_size,), device=device, dtype=torch.long)
+
+    def _get_sampling_timesteps(self, batch: int, *, device: torch.device) -> list[torch.tensor]:
+        time_transitions = []
+
+        for i in reversed(range(self.num_timesteps)):
+            time_transitions.append((torch.full((batch,), i, device=device, dtype=torch.long)))
+
+        return time_transitions
+
     def q_sample(self, x_start, t, noise=None):
         if not exists(noise):
             noise = lambda: torch.randn_like(x_start)

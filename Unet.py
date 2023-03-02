@@ -2,8 +2,12 @@ from typing import Union
 
 from einops import rearrange
 from einops.layers.torch import Rearrange
+from einops_exts.torch import EinopsToAndFrom
+import torch
+from torch import nn
+import torch.nn.functional as F
 
-from utils import default, cast_tuple
+from utils import default, exists, cast_tuple, prob_mask_like
 from layers import (
     Attention,
     CrossEmbedLayer,
@@ -273,7 +277,7 @@ class Unet(nn.Module):
             *,
             lowres_cond_img = None,
             lowres_noise_times = None,
-            text_embedsr = None,
+            text_embeds = None,
             text_mask = None,
             cond_drop_prob: float = 0.
             ):

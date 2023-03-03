@@ -18,14 +18,10 @@ class GaussianDiffusion(nn.Module):
         beta_end = scale * 0.02
         betas = torch.linspace(beta_start, beta_end, timesteps, dtype=torch.float64)
         
-        print(f'betas:\n\t{betas}')
-        
         # Diffusion model constants/buffers. See https://arxiv.org/pdf/2006.11239.pdf
         alphas = 1. - betas
         alphas_cumprod = torch.cumprod(alphas, axis=0)
         alphas_cumprod_prev = F.pad(alphas_cumprod[:-1], (1,0), value=1.)
-        
-        print(f'alphas_cumprod:\n\t{alphas_cumprod}')
         
         # register buffer helper function
         register_buffer = lambda name, val: self.register_buffer(name, val.to(torch.float32), persistent=False)

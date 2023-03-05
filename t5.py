@@ -54,7 +54,7 @@ def t5_encode_text(text, name: str = 't5_base', max_length=MAX_LENGTH):
 
     # Move to cuda is available
     if torch.cuda.is_available():
-        device = torch.device('cuda')
+        device = torch.device('cuda:1')
         model = model.to(device)
     else:
         device = torch.device('cpu')

@@ -229,7 +229,7 @@ class Imagen(nn.Module):
         
         b, *_, device = *x.shape, x.device
         
-        model_mean, _, model_log_variance = self.p_mean_variance(unet, x=x, t=t,
+        model_mean, _, model_log_variance = self._p_mean_variance(unet, x=x, t=t,
                                                                   noise_scheduler=noise_scheduler,
                                                                   text_embeds=text_embeds, text_mask=text_mask,
                                                                   cond_scale=cond_scale,
@@ -260,7 +260,7 @@ class Imagen(nn.Module):
         img = torch.randn(shape, device=device)
         
         for times in tqdm(timesteps, desc='sampling loop time step', total=len(timesteps)):
-            img = self.p_sample(unet, img, times, text_embeds=text_embeds, text_mask=text_mask,
+            img = self._p_sample(unet, img, times, text_embeds=text_embeds, text_mask=text_mask,
                                 cond_scale=cond_scale, lowres_cond_img=lowres_cond_img,
                                 lowres_noise_times=lowres_noise_times, noise_scheduler=noise_scheduler
                                )

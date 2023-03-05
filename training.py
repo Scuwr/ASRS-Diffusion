@@ -1,6 +1,7 @@
 import inspect
 import json
 import os
+import sys
 import signal
 from argparse import ArgumentParser
 from concurrent.futures import ThreadPoolExecutor
@@ -109,7 +110,7 @@ def _collate(batch):
     # TODO: Should really be passing in `device` - find a more elegant way to do this
     for didx, datum in enumerate(batch):
         for tensor in datum.keys():
-            batch[didx][tensor] = batch[didx][tensor].to(torch.device("cuda:0" if torch.cuda.is_available() else "cpu"))
+            batch[didx][tensor] = batch[didx][tensor].to(torch.device("cuda:1" if torch.cuda.is_available() else "cpu"))
 
     return torch.utils.data.dataloader.default_collate(batch)
 
@@ -171,7 +172,7 @@ def get_minimagen_parser():
     parser.add_argument("-mw", "--MAX_NUM_WORDS", dest="MAX_NUM_WORDS",
                         help="Maximum number of words allowed in a caption", default=64, type=int)
     parser.add_argument("-s", "--IMG_SIDE_LEN", dest="IMG_SIDE_LEN", help="Side length of square Imagen output images",
-                        default=128, type=int)
+                        default=64, type=int)
     parser.add_argument("-e", "--EPOCHS", dest="EPOCHS", help="Number of training epochs", default=5, type=int)
     parser.add_argument("-t5", "--T5_NAME", dest="T5_NAME", help="Name of T5 encoder to use", default='t5_base',
                         type=str)
@@ -235,10 +236,10 @@ class MinimagenDataset(torch.utils.data.Dataset):
         return {'image': img, 'encoding': enc, 'mask': msk}
 
 
-def ConceptualCaptions(args, smalldata=False, testset=False):
+def ConceptualCaptions(args, smalldata=False, testset=False, size=16):
     dset = load_dataset("conceptual_captions")
     if smalldata:
-        num = 16
+        num = size
         vi = dset['validation']['image_url'][:num]
         vc = dset['validation']['caption'][:num]
         ti = dset['train']['image_url'][:num]
@@ -322,7 +323,7 @@ def MinimagenTrain(timestamp, args, unets, imagen, train_dataloader, valid_datal
         # Every 10% of the way through epoch, save states in case of training failure
         if batch_num % args.CHCKPT_NUM == 0:
             with training_dir():
-                with open('training_progess.txt', 'a') as f:
+                with open('training_progress.txt', 'a') as f:
                     f.write(f'{"-" * 10}Checkpoint created at batch number {batch_num}{"-" * 10}\n')
 
             # Save temporary state dicts
@@ -334,7 +335,7 @@ def MinimagenTrain(timestamp, args, unets, imagen, train_dataloader, valid_datal
             # Write and batch average training loss so far
             avg_loss = [i / batch_num for i in running_train_loss]
             with training_dir():
-                with open('training_progess.txt', 'a') as f:
+                with open('training_progress.txt', 'a') as f:
                     f.write(f'U-Nets Avg Train Losses Epoch {epoch + 1} Batch {batch_num}: '
                             f'{[round(i.item(), 3) for i in avg_loss]}\n')
                     f.write(f'U-Nets Batch Train Losses Epoch {epoch + 1} Batch {batch_num}: '
@@ -371,7 +372,7 @@ def MinimagenTrain(timestamp, args, unets, imagen, train_dataloader, valid_datal
                         torch.save(imagen.unets[i].state_dict(), model_path)
 
             with training_dir():
-                with open('training_progess.txt', 'a') as f:
+                with open('training_progress.txt', 'a') as f:
                     f.write(
                         f'U-Nets Avg Valid Losses: {[round(i.item(), 3) for i in avg_loss]}\n')
                     f.write(
@@ -381,7 +382,7 @@ def MinimagenTrain(timestamp, args, unets, imagen, train_dataloader, valid_datal
     for epoch in range(args.EPOCHS):
         print(f'\n{"-" * 20} EPOCH {epoch + 1} {"-" * 20}')
         with training_dir():
-            with open('training_progess.txt', 'a') as f:
+            with open('training_progress.txt', 'a') as f:
                 f.write(f'{"-" * 20} EPOCH {epoch + 1} {"-" * 20}\n')
 
         imagen.train(True)
@@ -411,14 +412,16 @@ def MinimagenTrain(timestamp, args, unets, imagen, train_dataloader, valid_datal
                 with training_dir():
                     with open('training_progess.txt', 'a') as f:
                         f.write(
-                            f'\n\nTRAINING ABORTED AT EPOCH {epoch}, BATCH NUMBER {batch_num} with exception {e}. MOST RECENT STATE '
-                            f'DICTS SAVED TO ./tmp IN TRAINING FOLDER')
+                            f'\n\nTRAINING ABORTED AT EPOCH {epoch}, BATCH NUMBER {batch_num} with exception {e}: {e.with_traceback}'
+                            f'\nMOST RECENT STATE DICTS SAVED TO ./tmp IN TRAINING FOLDER')
 
                 # Save temporary state dicts
                 with training_dir("tmp"):
                     for idx in range(len(unets)):
                         model_path = f"unet_{idx}_tmp.pth"
                         torch.save(imagen.unets[idx].state_dict(), model_path)
+
+                sys.exit(1)
 
 
 def load_restart_training_parameters(args, justparams=False):
@@ -504,7 +507,7 @@ def save_training_info(args, timestamp, unets_params, imagen_params, model_size,
                 f.write(f'--{i}={getattr(args, i)}\n')
 
     with training_dir():
-        with open('training_progess.txt', 'a') as f:
+        with open('training_progress.txt', 'a') as f:
             if args.RESTART_DIRECTORY is not None:
                 f.write(f"STARTED FROM CHECKPOINT {args.RESTART_DIRECTORY}\n")
             f.write(f'model size: {model_size:.3f}MB\n\n')

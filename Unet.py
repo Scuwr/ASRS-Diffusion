@@ -414,6 +414,17 @@ class Unet(nn.Module):
         # Final convolution to get the proper number of channels.
         return self.final_conv(x)
         
+    def forward_with_cond_scale(self, *args, cond_scale=1., **kwargs):
+        # Calculate standard conditional logits
+        logits = self.forward(*args, **kwargs)
+
+        if cond_scale == 1:
+            return logits
+
+        # Calculate unconditional NULL logits by always dropping conditioning in the forward pass (`cond_drop_prob=1.`)
+        null_logits = self.forward(*args, cond_drop_prob=1., **kwargs)
+        return null_logits + (logits - null_logits) * cond_scale
+        
     def _generate_t_tokens(
             self,
             time,
@@ -523,7 +534,7 @@ class Base(Unet):
     """
 
     defaults = dict(
-        dim=512,
+        dim=256,
         dim_mults=(1, 2, 3, 4),
         num_resnet_blocks=3,
         layer_attns=(False, True, True, True),
@@ -546,7 +557,7 @@ class Super(Unet):
     - memory_efficient = True
     """
     defaults = dict(
-        dim=128,
+        dim=64,
         dim_mults=(1, 2, 4, 8),
         num_resnet_blocks=(2, 4, 8, 8),
         layer_attns=(False, False, False, True),

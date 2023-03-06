@@ -22,26 +22,60 @@ from layers import (
 from t5 import get_encoded_dim
 
 class Unet(nn.Module):
+    """
+    `U-Net <https://arxiv.org/abs/1505.04597>`_ for use as a denoising model trained via `Diffusion <https://www.assemblyai.com/blog/diffusion-models-for-machine-learning-introduction/>`_.
+    See also :class:`.minimagen.diffusion_model.GaussianDiffusion`
+    """
+
     def __init__(
             self,
             *,
-            dim = 128,
-            dim_mults = (1, 2, 4),
-            channels = 3,
-            channels_out = None,
-            cond_dim = None,
+            dim: int = 128,
+            dim_mults: tuple = (1, 2, 4),
+            channels: int = 3,
+            channels_out: int = None,
+            cond_dim: int = None,
             text_embed_dim=get_encoded_dim('t5_small'),
             num_resnet_blocks: Union[int, tuple] = 1,
             layer_attns: Union[bool, tuple] = True,
             layer_cross_attns: Union[bool, tuple] = True,
-            attn_heads = 8,
-            lowres_cond = False,
-            memory_efficient = False,
-            attend_at_middle = False
-            ):
-        
+            attn_heads: int = 8,
+            lowres_cond: bool = False,
+            memory_efficient: bool = False,
+            attend_at_middle: bool = False
+
+    ):
+        """
+        :param dim: Number of channels at the greatest spatial resolution in the Unet. Recommended to be at least 128.
+        :param dim_mults: Number of channels multiplier for each layer of the Unet. E.g. a 128 channel, 64x64 image
+            put into a U-Net with :code:`dim_mults=(1, 2, 4)` will be shape
+
+            - (128, 64, 64) in the first layer of the U-Net
+
+            - (256, 32, 32) in the second layer of the U-net, and
+
+            - (512, 16, 16) in the third layer of the U-Net
+        :param channels: Number of channels in the input image.
+        :param channels_out: Number of channels in the output image. Defaults to :code:`channels`.
+        :param cond_dim: Conditioning dimensionality. Defaults to :code:`dim`.
+        :param text_embed_dim: Dimensionality of the text embeddings. See :func:`.minimagen.t5.t5_encode_text.
+        :param num_resnet_blocks: How many ResNet blocks exist at each layer of the Unet (besides an initial
+            unique block). Either one value for all resolutions or a tuple of values, one for each resolution.
+        :param layer_attns: Whether to add self attention (via Transformer encoder) at the end of a a given layer of
+            the Unet. Either one value for all resolutions or a tuple of values, one for each resolution.
+        :param layer_cross_attns: Whether to add cross attention between images and conditioning tokens. Only applies
+            to the first unique ResNet block in a given layer. Either one value for all resolutions or a tuple of
+            values, one for each resolution.
+        :param attn_heads: Numner of attention heads. Needs to be >1, ideally 4 or 8
+        :param lowres_cond: Whether the Unet is conditioned on low resolution images. :code:`True` for super-resolution
+            models.
+        :param memory_efficient: Whether to downsample at the beginning rather than end of a given layer in the
+            U-Net. Saves memory.
+        :param attend_at_middle: Whether to have an :class:`.minimagen.layers.Attention` at the
+            bottleneck. Can turn off for higher resolution Unets in `cascading DDPM <https://cascaded-diffusion.github.io/assets/cascaded_diffusion.pdf>`_.
+        """
         super().__init__()
-        
+
         # Save arguments locals to take care of some hyperparameters for cascading DDPM
         self._locals = locals()
         self._locals.pop('self', None)
@@ -68,7 +102,7 @@ class Unet(nn.Module):
             nn.Linear(dim, time_cond_dim),
             nn.SiLU()
         )
-        
+
         # Maps time hidden state to time conditioning (non-attention)
         self.to_time_cond = nn.Sequential(
             nn.Linear(time_cond_dim, time_cond_dim)
@@ -101,7 +135,7 @@ class Unet(nn.Module):
                 nn.Linear(time_cond_dim, cond_dim * NUM_TIME_TOKENS),
                 Rearrange('b (r d) -> b r d', r=NUM_TIME_TOKENS)
             )
-        
+
         # TEXT CONDITIONING
 
         self.norm_cond = nn.LayerNorm(cond_dim)
@@ -135,7 +169,7 @@ class Unet(nn.Module):
                                          dim_out=dim,
                                          kernel_sizes=(3, 7, 15),
                                          stride=1)
-        
+
         # Determine channel numbers for UNet descent/ascent and then zip into in/out pairs
         dims = [dim, *map(lambda m: dim * m, dim_mults)]
         in_out = list(zip(dims[:-1], dims[1:]))
@@ -291,10 +325,17 @@ class Unet(nn.Module):
         final_conv_dim_in = dim if final_resnet_block else final_conv_dim
         self.final_conv = nn.Conv2d(final_conv_dim_in, self.channels_out, 3,
                                     padding=3 // 2)
-        
-    def _cast_model_parameters(self, *, lowres_cond, text_embed_dim,
-                               channels, channels_out,
-                              ):
+
+    # if the current settings for the unet are not correct
+    # for cascading DDPM, then reinit the unet with the right settings
+    def _cast_model_parameters(
+            self,
+            *,
+            lowres_cond,
+            text_embed_dim,
+            channels,
+            channels_out,
+    ):
         if lowres_cond == self.lowres_cond and \
                 channels == self.channels and \
                 text_embed_dim == self.text_embed_dim and \
@@ -312,26 +353,41 @@ class Unet(nn.Module):
 
     def forward(
             self,
-            x,
-            time,
+            x: torch.tensor,
+            time: torch.tensor,
             *,
-            lowres_cond_img = None,
-            lowres_noise_times = None,
-            text_embeds = None,
-            text_mask = None,
+            lowres_cond_img: torch.tensor = None,
+            lowres_noise_times: torch.tensor = None,
+            text_embeds: torch.tensor = None,
+            text_mask: torch.tensor = None,
             cond_drop_prob: float = 0.
-            ):
-        
+            ) -> torch.tensor:
+        """
+        Unet forward pass.
+
+        :param x: Input images. Shape (b, c, s, s).
+        :param time: Timestep to noise to for each image. Shape (b,)
+        :param lowres_cond_img: (Upsampled) low-res conditioning images for super-res models. Shape (b, c, s, s)
+        :param lowres_noise_times: Time to noise to for low-res `noise conditioning augmentation <https://www.assemblyai.com/blog/how-imagen-actually-works/#robust-cascaded-diffusion-models>`_.
+            Shape (b,).
+        :param text_embeds: Conditioning text embeddings. Size (b, 256, embedding_dim). See
+            :func:`.minimagen.t5.t5_encode_text`.
+        :param text_mask: Text mask for text embeddings. Shape (b, 256)
+        :param cond_drop_prob: Probability of dropping conditioning info for `classifier-free guidance <https://www.assemblyai.com/blog/how-imagen-actually-works/#classifier-free-guidance>`_. Generally in
+            the range [0.1, 0.2].
+        :return: Denoised images. Shape (b, c, s, s).
+        """
+
         batch_size, device = x.shape[0], x.device
-        
+
         assert not (self.lowres_cond and not exists(lowres_cond_img)), \
             'low resolution conditioning image must be present'
         assert not (self.lowres_cond and not exists(lowres_noise_times)), \
             'low resolution conditioning noise time must be present'
-        
+
         # time conditioning
         t, time_tokens = self._generate_t_tokens(time, lowres_noise_times)
-        
+
         # text conditioning
         t, c = self._text_condition(text_embeds, batch_size, cond_drop_prob, device, text_mask, t, time_tokens)
 
@@ -413,8 +469,30 @@ class Unet(nn.Module):
 
         # Final convolution to get the proper number of channels.
         return self.final_conv(x)
-        
-    def forward_with_cond_scale(self, *args, cond_scale=1., **kwargs):
+
+    def forward_with_cond_scale(
+            self,
+            *args,
+            cond_scale: float = 1.,
+            **kwargs
+    ) -> torch.tensor:
+        """
+        Adds `classifier-free guidance <https://www.assemblyai.com/blog/how-imagen-actually-works/#classifier-free-guidance>`_ to the forward pass.
+
+        :param args: Arguments to pass to `forward`
+        :param cond_scale: Conditioning scale.
+
+            - :code:`cond_scale = 0` => unconditional model.
+
+            - :code:`cond_scale = 1` => standard conditional model.
+
+            - :code:`cond_scale > 1` => large guidance weights improve image quality/fidelity at the cost of diversity.
+            See `here <https://www.assemblyai.com/blog/how-imagen-actually-works/#large-guidance-weight-samplers>`_ for
+            more information.
+
+        :param kwargs: Keyword arguments to pass to :code:`forward`
+        :return: Guided images. Shape (b, c, s, s).
+        """
         # Calculate standard conditional logits
         logits = self.forward(*args, **kwargs)
 
@@ -422,15 +500,25 @@ class Unet(nn.Module):
             return logits
 
         # Calculate unconditional NULL logits by always dropping conditioning in the forward pass (`cond_drop_prob=1.`)
+        #   https://github.com/oconnoob/minimal_imagen/blob/minimal/images/clf_free_guidance.png
         null_logits = self.forward(*args, cond_drop_prob=1., **kwargs)
         return null_logits + (logits - null_logits) * cond_scale
-        
+
     def _generate_t_tokens(
             self,
-            time,
-            lowres_noise_times
-            ):
+            time: torch.tensor,
+            lowres_noise_times: torch.tensor
+    ) -> tuple[torch.tensor, torch.tensor]:
+        '''
+        Generate t and time_tokens
 
+        :param time: Tensor of shape (b,). The timestep for each image in the batch.
+        :param lowres_noise_times:  Tensor of shape (b,). The timestep for each low-res conditioning image.
+        :return: tuple(t, time_tokens)
+            t: Tensor of shape (b, time_cond_dim) where `time_cond_dim` is 4x the UNet `dim`, or 8 if conditioning
+            on lowres image.
+            time_tokens: Tensor of shape (b, NUM_TIME_TOKENS, dim), where `NUM_TIME_TOKENS` defaults to 2.
+        '''
         time_hiddens = self.to_time_hiddens(time)
         t = self.to_time_cond(time_hiddens)
         time_tokens = self.to_time_tokens(time_hiddens)
@@ -445,17 +533,39 @@ class Unet(nn.Module):
             time_tokens = torch.cat((time_tokens, lowres_time_tokens), dim=-2)
 
         return t, time_tokens
-    
+
     def _text_condition(
             self,
-            text_embeds,
-            batch_size,
-            cond_drop_prob,
-            device,
-            text_mask,
-            t,
-            time_tokens
-            ):
+            text_embeds: torch.tensor,
+            batch_size: int,
+            cond_drop_prob: float,
+            device: torch.device,
+            text_mask: torch.tensor,
+            t: torch.tensor,
+            time_tokens: torch.tensor
+    ) -> tuple[torch.tensor, torch.tensor]:
+        '''
+        Condition on text.
+
+        :param text_embeds: Text embedding from T5 encoder. Shape (b, mw, ed), where
+
+            :code:`b` is the batch size,
+
+            :code:`mw` is the maximum number of words in a caption in the batch, and
+
+            :code:`ed` is the T5 encoding dimension.
+        :param batch_size: Size of the batch/number of captions
+        :param cond_drop_prob: Probability of conditional dropout for `classifier-free guidance <https://www.assemblyai.com/blog/how-imagen-actually-works/#classifier-free-guidance>`_
+        :param device: Device to use.
+        :param text_mask: Text mask for text embeddings. Shape (b, minimagen.t5.MAX_LENGTH)
+        :param t: Time conditioning tensor.
+        :param time_tokens: Time conditioning tokens.
+        :return: tuple(t, c)
+
+            :code:`t`: Time conditioning tensor
+
+            :code:`c`: Main conditioning tokens
+        '''
 
         text_tokens = None
         if exists(text_embeds):

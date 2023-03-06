@@ -2,6 +2,7 @@ import inspect
 import json
 import os
 import sys
+import traceback
 import signal
 from argparse import ArgumentParser
 from concurrent.futures import ThreadPoolExecutor
@@ -410,10 +411,10 @@ def MinimagenTrain(timestamp, args, unets, imagen, train_dataloader, valid_datal
             except Exception as e:
                 # Note that training aborted
                 with training_dir():
-                    with open('training_progess.txt', 'a') as f:
+                    with open('training_progress.txt', 'a') as f:
                         f.write(
-                            f'\n\nTRAINING ABORTED AT EPOCH {epoch}, BATCH NUMBER {batch_num} with exception {e}: {e.with_traceback}'
-                            f'\nMOST RECENT STATE DICTS SAVED TO ./tmp IN TRAINING FOLDER')
+                            f'\n\nTRAINING ABORTED AT EPOCH {epoch}, BATCH NUMBER {batch_num} with exception {e}:\n\n{traceback.format_exc()}'
+                            f'\n\nMOST RECENT STATE DICTS SAVED TO ./tmp IN TRAINING FOLDER')
 
                 # Save temporary state dicts
                 with training_dir("tmp"):

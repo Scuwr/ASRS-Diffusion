@@ -21,7 +21,7 @@ parser = get_minimagen_parser()
 parser.add_argument("-ts", "--TIMESTAMP", dest="timestamp", help="Timestamp for training directory", type=str,
                              default=None)
 parser.add_argument("-md", "--MAXDATASET", dest="maxdataset", help="Maximum number of images for training data", type=int, default=None)
-args = parser.parse_args(["-b", "1", "-n", "0", "-md", "3000", "-t", "1000"])
+args = parser.parse_args(["-b", "1", "-n", "0", "-md", "3000", "-t", "1000", "-rd", "training_20230305_105916"])
 print(args)
 timestamp = args.timestamp
 maxdataset = args.maxdataset

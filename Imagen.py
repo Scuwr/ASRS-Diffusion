@@ -141,7 +141,7 @@ class Imagen(nn.Module):
         # If gotten unet different than one listed as being trained, pl
         if index != self.unet_being_trained_index:
             for unet_index, unet in enumerate(self.unets):
-                unet.to(self.device if unet_index == index else 'cpu')
+                unet.to(self.device)# if unet_index == index else 'cpu')
 
         # Update relevant attribute
         self.unet_being_trained_index = index
@@ -176,7 +176,7 @@ class Imagen(nn.Module):
 
         # Store which device each UNet is on, place them all on CPU except the specified one
         devices = [module_device(unet) for unet in self.unets]
-        self.unets.cpu()
+        #self.unets.cpu()
         unet.to(self.device)
 
         yield
@@ -340,7 +340,7 @@ class Imagen(nn.Module):
         return pil_images
     
     
-    def _p_losses(self, unet, x_start, times, *, noise_scheduler, lowres_cond_img=None, lowres_aug_times=None,
+    def _p_losses(self, unet: Unet, x_start, times, *, noise_scheduler, lowres_cond_img=None, lowres_aug_times=None,
                   text_embeds=None, text_mask=None, noise=None
                  ):
         

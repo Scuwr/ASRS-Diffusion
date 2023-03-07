@@ -62,7 +62,7 @@ def _instatiate_minimagen(directory):
 
 
 def load_minimagen(directory):
-    map_location = torch.device("cuda:1" if torch.cuda.is_available() else "cpu")
+    map_location = torch.device("cuda:1")
 
     minimagen = _instatiate_minimagen(directory)
 

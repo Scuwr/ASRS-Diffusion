@@ -111,7 +111,7 @@ def _collate(batch):
     # TODO: Should really be passing in `device` - find a more elegant way to do this
     for didx, datum in enumerate(batch):
         for tensor in datum.keys():
-            batch[didx][tensor] = batch[didx][tensor].to(torch.device("cuda:1" if torch.cuda.is_available() else "cpu"))
+            batch[didx][tensor] = batch[didx][tensor].to(torch.device("cuda:1")) # if torch.cuda.is_available() else "cpu"))
 
     return torch.utils.data.dataloader.default_collate(batch)
 

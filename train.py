@@ -13,7 +13,7 @@ from training import get_minimagen_parser, ConceptualCaptions, get_minimagen_dl_
     load_restart_training_parameters, load_testing_parameters
 
 # Get device
-device = torch.device("cuda:1" if torch.cuda.is_available() else "cpu")
+device = torch.device("cuda:1") #if torch.cuda.is_available() else "cpu")
 
 # Command line argument parser. See `training.get_minimagen_parser()`.
 parser = get_minimagen_parser()
@@ -21,7 +21,7 @@ parser = get_minimagen_parser()
 parser.add_argument("-ts", "--TIMESTAMP", dest="timestamp", help="Timestamp for training directory", type=str,
                              default=None)
 parser.add_argument("-md", "--MAXDATASET", dest="maxdataset", help="Maximum number of images for training data", type=int, default=None)
-args = parser.parse_args(["-b", "1", "-n", "0", "-md", "3000", "-t", "1000", "-rd", "training_20230305_105916"])
+args = parser.parse_args(["-b", "1", "-n", "0", "-md", "3000", "-t", "1000", "-test"])
 print(args)
 timestamp = args.timestamp
 maxdataset = args.maxdataset
@@ -41,11 +41,11 @@ elif args.PARAMETERS is not None:
     args = load_restart_training_parameters(args, justparams=True)
 
 # If testing, lower parameter values to lower computational load and also to lower amount of data being used.
-if args.TESTING:
+if maxdataset is not None:
+    train_dataset, valid_dataset = ConceptualCaptions(args, smalldata=True, size=maxdataset)
+elif args.TESTING:
     args = load_testing_parameters(args)
     train_dataset, valid_dataset = ConceptualCaptions(args, smalldata=True)
-elif maxdataset is not None:
-    train_dataset, valid_dataset = ConceptualCaptions(args, smalldata=True, size=maxdataset)
 else:
     train_dataset, valid_dataset = ConceptualCaptions(args, smalldata=False)
 

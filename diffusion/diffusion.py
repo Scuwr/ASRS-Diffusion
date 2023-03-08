@@ -7,13 +7,13 @@ from tqdm import tqdm
 import logging
 from torch.utils.tensorboard import SummaryWriter
 
-from diffusion.utils import *
+from diffusion_utils import *
 from modules import UNet
 
 logging.basicConfig(format="%(asctime)s - %(levelname)s: %(message)s", level=logging.INFO, datefmt="%I:%M:S")
 
 class Diffusion:
-    def __init__(self, noise_steps=1000, beta_start=1e-4, beta_end=0.02, img_size=32, device="cuda:1"):
+    def __init__(self, noise_steps=1000, beta_start=1e-4, beta_end=0.02, img_size=32, device="cuda"):
         self.noise_steps = noise_steps
         self.beta_start = beta_start
         self.beta_end = beta_end
@@ -27,7 +27,7 @@ class Diffusion:
     def get_noise_schedule(self):
         return torch.linspace(self.beta_start, self.beta_end, self.noise_steps)
     
-    def get_noised_image(self, x, t):
+    def noise_images(self, x, t):
         sqrt_alpha_hat = torch.sqrt(self.alpha_hat[t])[:, None, None, None]
         sqrt_one_minus_alpha_hat = torch.sqrt(1. - self.alpha_hat[t])[:, None, None, None]
         epsilon = torch.randn_like(x)
@@ -59,9 +59,13 @@ class Diffusion:
     
 def train(args):
     setup_logging(args.run_name)
-    device = args.device
-    dataloader = get_data(args)
-    model = UNet().to(device)
+    device = args.main_worker
+    dataloader = get_data(args, num_workers=len(args.workers))
+    model = UNet()
+
+    model = nn.DataParallel(model, device_ids = args.workers)
+    model.to(device)
+
     optimizer = optim.AdamW(model.parameters(), lr=args.lr)
     mse = nn.MSELoss()
     diffusion = Diffusion(img_size=args.image_size, device=device)
@@ -95,11 +99,12 @@ def launch():
     parser = argparse.ArgumentParser()
     args = parser.parse_args()
     args.run_name = "Diffusion"
-    args.epochs = 5
-    args.batch_size = 12
+    args.epochs = 100
+    args.batch_size = 80
     args.image_size = 64
-    args.dataset_path = r"C:\Users\dome\datasets\landscape_img_folder"
-    args.device = "cuda:1"
+    args.dataset_path = r"aircraft/fgvc-aircraft-2013b/data"
+    args.main_worker = "cuda:1"
+    args.workers = [1, 2, 3, 4, 7]
     args.lr = 3e-4
     train(args)
 

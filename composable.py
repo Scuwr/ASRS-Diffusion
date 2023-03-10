@@ -13,8 +13,8 @@ from stablediffusion.scripts.txt2img import load_model_from_config
 
 device = torch.device("cuda")
 
-prompt_i = "a painting of a virus monster playing guitar"
-prompt_j = "a forested landscape"
+prompt_i = "a stone castle surrounded by lakes and trees"
+prompt_j = "black and white"
 
 w_i = 0.5
 w_j = 0.5
@@ -63,7 +63,7 @@ def p_sample(model, x, c, ts, index, old_eps=None, t_next=None):
 
     return x, old_eps 
 
-def get_x_prev_and_pred_x0(x, e_t, index):
+def sample_x(x, e_t, index):
     # select parameters corresponding to the currently considered timestep
     a_t = torch.full((b, 1, 1, 1), alphas[index], device=device)
     a_prev = torch.full((b, 1, 1, 1), alphas_prev[index], device=device)
@@ -76,7 +76,22 @@ def get_x_prev_and_pred_x0(x, e_t, index):
     dir_xt = (1. - a_prev - sigma_t**2).sqrt() * e_t
     noise = sigma_t * torch.randn(x.shape, device=device)
     x_prev = a_prev.sqrt() * pred_x0 + dir_xt + noise
-    return x_prev, pred_x0
+    return x_prev
+
+def sample_x_no_sqrta(x, e_t, index):
+    # select parameters corresponding to the currently considered timestep
+    a_t = torch.full((b, 1, 1, 1), alphas[index], device=device)
+    a_prev = torch.full((b, 1, 1, 1), alphas_prev[index], device=device)
+    sigma_t = torch.full((b, 1, 1, 1), sigmas[index], device=device)
+    sqrt_one_minus_at = torch.full((b, 1, 1, 1), sqrt_one_minus_alphas[index],device=device)
+
+    # current prediction for x_0
+    pred_x0 = (x - sqrt_one_minus_at * e_t) / a_t.sqrt()
+    # direction pointing to x_t
+    dir_xt = (1. - a_prev - sigma_t**2).sqrt() * e_t
+    noise = sigma_t * torch.randn(x.shape, device=device)
+    x_prev = pred_x0 + dir_xt + noise
+    return x_prev
 
 sample_path = os.path.join(outpath, "samples")
 os.makedirs(sample_path, exist_ok=True)
@@ -114,7 +129,7 @@ with torch.no_grad():
                 # Sampling
                 e_c = (e + w_i * (e_i - e) + w_j * (e_j - e))
                 
-                x, _ = get_x_prev_and_pred_x0(x, e_c, index)
+                x = sample_x(x, e_c, index)
                 #mean = x - (e + w_i * (e_i - e) + w_j * (e_j - e))
                 #covar = covar = torch.full((b, 1, 1, 1), sigmas[index], device=device)**2
                 #ident = torch.eye(h // f, w // f).to(device)

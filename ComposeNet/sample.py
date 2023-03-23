@@ -8,26 +8,26 @@ from tqdm import tqdm
 from torch import autocast
 from einops import rearrange
 from omegaconf import OmegaConf
+from torch.utils.data import DataLoader
 
-sys.path.append('./stablediffusion')
+from datasets import CircleDataset
+from cldm.util import load_model_from_config
+from ldm.models.diffusion.plms import PLMSSampler
 
-from stablediffusion.ldm.models.diffusion.plms import PLMSSampler
-from stablediffusion.scripts.txt2img import load_model_from_config
+config_path = './ComposeNet/models/cldm_v21.yaml'
+model_path =  './ComposeNet/models/CircleDataset_sd21_gs-001000.ckpt'
+output_path = './ComposeNet'
 
 device = torch.device("cuda")
 
-prompt_i = "a stone castle surrounded by lakes and trees"
-prompt_j = "black and white"
+prompt_i = "blue circle with snow background"
+prompt_j = "hogwarts"
 
 w_i = 0.5
 w_j = 0.5
 
-configpath = "stablediffusion/configs/stable-diffusion/v1-inference.yaml"
-outpath = "."
-
-config = OmegaConf.load(configpath)
-
 n = 1 # Number of samples / batch size
+b = n 
 ch = 4 # Latent channels
 f = 8 # Downsample factor
 h = 512 # Image height
@@ -37,26 +37,36 @@ scale = 7.5 # Unconditional guidance scale
 ddim_eta = 0.0 # 0.0 corresponds to deterministic sampling
 shape = [ch, h // f, w // f]
 
-b = n
 
-model = load_model_from_config(config, 'sd-v1-4_768.ckpt')
+# Create Control Images
+dataset = CircleDataset()
+control_i = torch.from_numpy((dataset[21]['hint'])[None, :])
+control_i = control_i.to(device)
+control_i = rearrange(control_i, 'b h w c -> b c h w')
+control_i = control_i.to(memory_format=torch.contiguous_format).float()
+
+# Unconditioned Control Image
+control_j = torch.zeros_like(control_i)
+control_j = control_j.to(device)
+control_j = control_j.to(memory_format=torch.contiguous_format).float()
+
+control_u = control_j
+
+
+# Load model
+model = load_model_from_config(config_path, model_path)
 model = model.to(device)
 sampler = PLMSSampler(model)
 sampler.make_schedule(ddim_num_steps=500, ddim_eta=ddim_eta, verbose=False)
 
+# Get scaling factors from Sampler Schedule
 alphas = sampler.ddim_alphas
 alphas_prev = sampler.ddim_alphas_prev
 sqrt_one_minus_alphas = sampler.ddim_sqrt_one_minus_alphas
 sigmas = sampler.ddim_sigmas
 
-with torch.no_grad():
-    with autocast('cuda'):
-        with model.ema_scope():
-            uc = model.get_learned_conditioning(n * [""])
-            c_i = model.get_learned_conditioning(n * [prompt_i])
-            print(c_i)
-            c_j = model.get_learned_conditioning(n * [prompt_j])
 
+# Sampler Functions
 @torch.no_grad()
 def p_sample(model, x, c, ts, index, old_eps=None, t_next=None):
     x, _, e_t = model.p_sample_plms(x, c, ts, index=index, unconditional_guidance_scale=scale, 
@@ -97,11 +107,25 @@ def sample_x_no_sqrta(x, e_t, index):
     x_prev = pred_x0 + dir_xt + noise
     return x_prev
 
-sample_path = os.path.join(outpath, "samples")
+
+# Initialize conditioning
+with torch.no_grad():
+    with autocast('cuda'):
+        with model.ema_scope():
+            uc = model.get_learned_conditioning(n * [""])
+            c_i = model.get_learned_conditioning(n * [prompt_i])
+            c_j = model.get_learned_conditioning(n * [prompt_j])
+
+            uc = dict(c_crossattn=uc, c_concat=[control_u])
+            c_i = dict(c_crossattn=[c_i], c_concat=[control_i])
+            c_j = dict(c_crossattn=[c_j], c_concat=[control_j])
+
+sample_path = os.path.join(output_path, "samples")
 os.makedirs(sample_path, exist_ok=True)
 base_count = len(os.listdir(sample_path))
-grid_count = len(os.listdir(outpath)) - 1
 
+
+# Run Diffusion Loop
 with torch.no_grad():
     with autocast('cuda'):
         with model.ema_scope():
@@ -134,10 +158,6 @@ with torch.no_grad():
                 e_c = (e + w_i * (e_i - e) + w_j * (e_j - e))
                 
                 x = sample_x(x, e_c, index)
-                #mean = x - (e + w_i * (e_i - e) + w_j * (e_j - e))
-                #covar = covar = torch.full((b, 1, 1, 1), sigmas[index], device=device)**2
-                #ident = torch.eye(h // f, w // f).to(device)
-                #x = torch.normal(mean, covar*ident)
 
             x = model.decode_first_stage(x)
             x = torch.clamp((x + 1.0) / 2.0, min=0.0, max=1.0)

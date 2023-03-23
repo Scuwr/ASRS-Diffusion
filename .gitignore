@@ -2,3 +2,22 @@ __pycache__
 .ipynb_checkpoints
 diffusion/dataset/*
 
+*.ckpt
+
+ComposeNet/trainingdata/*
+ComposeNet/models/*.ckpt
+ComposeNet/image_log
+ComposeNet/lightning_logs
+
+ControlNet
+
+.vscode
+
+stablediffusion
+
+samples
+
+diffusion/runs
+diffusion/results
+diffusion/models
+diffusion/aircraft

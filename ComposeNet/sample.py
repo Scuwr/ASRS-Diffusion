@@ -23,8 +23,8 @@ device = torch.device("cuda")
 prompt_i = "blue circle with snow background"
 prompt_j = "hogwarts"
 
-w_i = 0.5
-w_j = 0.5
+w_i = 0.9
+w_j = 0.1
 
 n = 1 # Number of samples / batch size
 b = n 
@@ -116,7 +116,7 @@ with torch.no_grad():
             c_i = model.get_learned_conditioning(n * [prompt_i])
             c_j = model.get_learned_conditioning(n * [prompt_j])
 
-            uc = dict(c_crossattn=uc, c_concat=[control_u])
+            uc = dict(c_crossattn=[uc], c_concat=[control_u])
             c_i = dict(c_crossattn=[c_i], c_concat=[control_i])
             c_j = dict(c_crossattn=[c_j], c_concat=[control_j])
 

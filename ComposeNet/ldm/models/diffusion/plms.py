@@ -188,12 +188,6 @@ class PLMSSampler(object):
                 x_in = torch.cat([x] * 2)
                 t_in = torch.cat([t] * 2)
 
-                #xa = torch.cat([unconditional_conditioning['c_crossattn'], c['c_crossattn']])
-                #cc = torch.cat([unconditional_conditioning['c_concat'], c['c_concat']])
-                #c_in = dict(c_crossattn=xa, c_concat=cc)
-
-                #c_in = torch.cat([unconditional_conditioning, c])
-                #e_t_uncond, e_t = self.model.apply_model(x_in, t_in, c_in).chunk(2)
                 e_t_uncond = self.model.apply_model(x, t, unconditional_conditioning)
                 e_t = self.model.apply_model(x, t, c)
                 e_t = e_t_uncond + unconditional_guidance_scale * (e_t - e_t_uncond)

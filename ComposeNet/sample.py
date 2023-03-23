@@ -23,8 +23,8 @@ device = torch.device("cuda")
 prompt_i = "blue circle with snow background"
 prompt_j = "hogwarts"
 
-w_i = 0.9
-w_j = 0.1
+w_i = 0.20
+w_j = 0.80
 
 n = 1 # Number of samples / batch size
 b = n 

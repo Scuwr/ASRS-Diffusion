@@ -21,3 +21,7 @@ diffusion/runs
 diffusion/results
 diffusion/models
 diffusion/aircraft
+
+redis-7.0.8
+*.pid
+dump.rdb

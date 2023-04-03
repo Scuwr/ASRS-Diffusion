@@ -15,7 +15,7 @@ from cldm.util import load_model_from_config
 from ldm.models.diffusion.plms import PLMSSampler
 
 config_path = './ComposeNet/models/cldm_v21.yaml'
-model_path =  './ComposeNet/models/CircleDataset_sd21_gs-001000.ckpt'
+model_path =  './ComposeNet/models/control_sd21_ini.ckpt'
 output_path = './ComposeNet'
 
 device = torch.device("cuda")
@@ -23,10 +23,10 @@ device = torch.device("cuda")
 prompt_i = "blue circle with snow background"
 prompt_j = "hogwarts"
 
-w_i = 0.20
-w_j = 0.80
+w_i = 0.00
+w_j = 1.00
 
-n = 1 # Number of samples / batch size
+n = 4 # Number of samples / batch size
 b = n 
 ch = 4 # Latent channels
 f = 8 # Downsample factor
@@ -43,6 +43,8 @@ dataset = CircleDataset()
 control_i = torch.from_numpy((dataset[21]['hint'])[None, :])
 control_i = control_i.to(device)
 control_i = rearrange(control_i, 'b h w c -> b c h w')
+print(control_i.shape)
+'''
 control_i = control_i.to(memory_format=torch.contiguous_format).float()
 
 # Unconditioned Control Image
@@ -57,7 +59,7 @@ control_u = control_j
 model = load_model_from_config(config_path, model_path)
 model = model.to(device)
 sampler = PLMSSampler(model)
-sampler.make_schedule(ddim_num_steps=500, ddim_eta=ddim_eta, verbose=False)
+sampler.make_schedule(ddim_num_steps=50, ddim_eta=ddim_eta, verbose=False)
 
 # Get scaling factors from Sampler Schedule
 alphas = sampler.ddim_alphas
@@ -135,7 +137,6 @@ with torch.no_grad():
             timesteps = sampler.ddim_timesteps
             time_range = np.flip(timesteps)
             total_steps = timesteps.shape[0]
-            print(total_steps)
             e_ti = []
             e_tj = []
             e_t = []
@@ -163,7 +164,9 @@ with torch.no_grad():
             x = torch.clamp((x + 1.0) / 2.0, min=0.0, max=1.0)
 
             for sample in x:
+                print(base_count)
                 sample = 255 * rearrange(sample.cpu().numpy(), 'c h w -> h w c')
                 img = Image.fromarray(sample.astype(np.uint8))
                 img.save(os.path.join(sample_path, f"sample_{base_count:05}.png"))
                 base_count += 1
+'''

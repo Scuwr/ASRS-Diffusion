@@ -83,3 +83,4 @@ model:
       params:
         freeze: True
         layer: "penultimate"
+        cache_dir: "/storage/cmarnold/cache"
